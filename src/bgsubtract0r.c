@@ -169,7 +169,6 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
   /* Clean up the mask. */
   if (inst->denoise)
     for (j=1; j<height-1; j++)
-    {
       for (i=1; i<width-1; i++)
       {
         n = (mask[width*j+i-1]+mask[width*j+i+1]+mask[width*(j-1)+i]+mask[width*(j+1)+i]
@@ -183,47 +182,32 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
           if (n>=6) mask[width*j+i] = 0xff;
         }
       }
-      /*
-      // Left
-      n = mask[width*(j-1)]+mask[width*(j-1)+1]+mask[width*j+1]+mask[width*(j+1)+1]+mask[width*(j+1)];
-      if (mask[width*j+i])
-      {
-        if (n<=1) mask[width*j] = 0;
-      }
-      else
-      {
-        if (n>=4) mask[width*j] = 1;
-      }
-      // Right
-      n = mask[width*j-1]+mask[width*j]+mask[width*(j+1)]+mask[width*(j+2)]+mask[width*(j+2)-1];
-      if (mask[width*j+i])
-      {
-        if (n<=1) mask[width*(j+1)-1] = 0;
-      }
-      else
-      {
-        if (n>=4) mask[width*(j+1)-1] = 1;
-      }
-      */
-    }
 
   for (i=0; i<len; i++)
     outframe[i] = inframe[i] & 0xffffff | mask[i] << 24;
 
   if (blur)
   {
+    int ii, jj;
     int di, dj;
     unsigned int a;
     // Number of pixels in the surface
     unsigned int s = (2*blur+1)*(2*blur+1);
 
-    for (j = blur; j < height-blur; j++)
-      for (i = blur; i < width-blur; i++)
+    for (j=0; j<height; j++)
+      for (i=0; i<width; i++)
       {
         a = 0;
-        for (dj = -blur; dj <= blur; dj++)
-          for (di = -blur; di <= blur; di++)
-            a += mask[width*(j+dj)+i+di];
+        for (dj=-blur; dj<=blur; dj++)
+          for (di=-blur; di<=blur; di++)
+          {
+            ii = i+di;
+            jj = j+dj;
+            if (ii < 0 || ii >= width || jj < 0 || jj >= height)
+              a += 0xff;
+            else
+              a += mask[width*jj+ii];
+          }
         a /= s;
         outframe[width*j+i] = (outframe[width*j+i] & 0xffffff) | a << 24;
       }
