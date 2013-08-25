@@ -1,5 +1,3 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
@@ -15,7 +13,8 @@ typedef struct bgsubtract0r_instance
   char denoise; /* Remove noise from mask. */
   uint32_t fill; /* The color for filling background. */
   uint32_t* reference; /* The reference image. */
-  unsigned char* mask; /* Where the mask is computed. */
+  uint8_t* mask; /* Where the mask is computed. */
+  int blur; /* Width of alpha-channel blurring. */
 } bgsubtract0r_instance_t;
 
 int f0r_init()
@@ -36,7 +35,7 @@ void f0r_get_plugin_info(f0r_plugin_info_t* bgsubtract0r_info)
   bgsubtract0r_info->frei0r_version = FREI0R_MAJOR_VERSION;
   bgsubtract0r_info->major_version = 0;
   bgsubtract0r_info->minor_version = 2;
-  bgsubtract0r_info->num_params =  3;
+  bgsubtract0r_info->num_params =  4;
   bgsubtract0r_info->explanation = "Bluescreen the background of a static video.";
 }
 
@@ -46,8 +45,9 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
   inst->width = width;
   inst->height = height;
   inst->denoise = 1;
+  inst->blur = 0;
   inst->threshold = 26;
-  inst->fill = 0x0000ff00;
+  inst->fill = 0x00000000;
   inst->reference = NULL;
   inst->mask = malloc(width*height);
   return (f0r_instance_t)inst;
@@ -82,6 +82,12 @@ void f0r_get_param_info(f0r_param_info_t* info, int param_index)
     info->type = F0R_PARAM_BOOL;
     info->explanation = "Remove noise";
     break;
+
+  case 3:
+    info->name = "blur";
+    info->type = F0R_PARAM_DOUBLE;
+    info->explanation = "Blur alpha channel by given radius (to remove sharp edges)";
+    break;
   }
 }
 
@@ -104,6 +110,10 @@ void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int param_i
 
   case 2:
     inst->denoise = *((double*)param) >= 0.5;
+    break;
+
+  case 3:
+    inst->blur = (int)(*((double*)param)+0.5);
     break;
   }
 }
@@ -130,6 +140,10 @@ void f0r_get_param_value(f0r_instance_t instance, f0r_param_t param, int param_i
   case 2:
     *((double*)param) = inst->denoise ? 1. : 0.;
     break;
+
+  case 3:
+    *((double*)param) = inst->blur;
+    break;
   }
 }
 
@@ -153,7 +167,8 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
   unsigned int width = inst->width;
   unsigned int height = inst->height;
   unsigned int len = width * height;
-  unsigned char *mask = inst->mask;
+  uint8_t *mask = inst->mask;
+  int blur = inst->blur;
   int i;
   int j;
   int n;
@@ -168,7 +183,7 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
   else
   {
     for (i=0; i<len; i++)
-      mask[i] = (dst(inst->reference[i], inframe[i]) > inst->threshold);
+      mask[i] = (dst(inst->reference[i], inframe[i]) > inst->threshold) ? 0xff : 0;
   }
 
   /* Clean up the mask. */
@@ -177,15 +192,15 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
     {
       for (i=1; i<width-1; i++)
       {
-        n = mask[width*j+i-1]+mask[width*j+i+1]+mask[width*(j-1)+i]+mask[width*(j+1)+i]
-          + mask[width*(j-1)+i-1]+mask[width*(j-1)+i+1]+mask[width*(j+1)+i-1]+mask[width*(j+1)+i+1];
+        n = (mask[width*j+i-1]+mask[width*j+i+1]+mask[width*(j-1)+i]+mask[width*(j+1)+i]
+             + mask[width*(j-1)+i-1]+mask[width*(j-1)+i+1]+mask[width*(j+1)+i-1]+mask[width*(j+1)+i+1])/0xff;
         if (mask[width*j+i])
         {
           if (n<=2) mask[width*j+i] = 0;
         }
         else
         {
-          if (n>=6) mask[width*j+i] = 1;
+          if (n>=6) mask[width*j+i] = 0xff;
         }
       }
       /*
@@ -212,15 +227,34 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
       */
     }
 
-  for(i=0; i<len; i++)
-  {
-    if (mask[i])
-      outframe[i] = inframe[i];
-    else
+  if (inst->fill && 0xff000000)
+    for (i=0; i<len; i++)
     {
-      outframe[i] = inst->fill;
-      // Updating does not work very well...
-      /* inst->reference[i] = inframe[i]; */
+      if (mask[i])
+        outframe[i] = inframe[i];
+      else
+        outframe[i] = inst->fill;
     }
+  else
+    for (i=0; i<len; i++)
+      outframe[i] = inframe[i] & 0xffffff | mask[i] << 24;
+
+  if (blur)
+  {
+    int di, dj;
+    unsigned int a;
+    // Number of pixels in the surface
+    unsigned int s = (2*blur+1)*(2*blur+1);
+
+    for (j = blur; j < height-blur; j++)
+      for (i = blur; i < width-blur; i++)
+      {
+        a = 0;
+        for (dj = -blur; dj <= blur; dj++)
+          for (di = -blur; di <= blur; di++)
+            a += mask[width*(j+dj)+i+di];
+        a /= s;
+        outframe[width*j+i] = (outframe[width*j+i] & 0xffffff) | a << 24;
+      }
   }
 }

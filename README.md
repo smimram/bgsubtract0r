@@ -15,6 +15,11 @@ A few settings can be set such as:
   reference image
 - whether to remove "noise" (i.e. isolated pixels)
 
+Some recommendations:
+- obviously the background should be of a (really) different color than the
+  moving actor
+- light in order to avoid shadows on the background
+
 Have fun and don't hesitate to use the bugtracker!
 
 Samuel Mimram
