@@ -1,7 +1,7 @@
 NAME = bgsubtract0r
 
 all: $(NAME).o
-	gcc -shared -lc -o $(NAME).so $(NAME).o
+	gcc -shared -O3 -lc -o $(NAME).so $(NAME).o
 
 test: all
 	LIQ_FREI0R_PATH=. ./test.liq

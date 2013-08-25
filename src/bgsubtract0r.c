@@ -11,7 +11,6 @@ typedef struct bgsubtract0r_instance
   unsigned int height;
   uint8_t threshold;
   char denoise; /* Remove noise from mask. */
-  uint32_t fill; /* The color for filling background. */
   uint32_t* reference; /* The reference image. */
   uint8_t* mask; /* Where the mask is computed. */
   int blur; /* Width of alpha-channel blurring. */
@@ -35,7 +34,7 @@ void f0r_get_plugin_info(f0r_plugin_info_t* bgsubtract0r_info)
   bgsubtract0r_info->frei0r_version = FREI0R_MAJOR_VERSION;
   bgsubtract0r_info->major_version = 0;
   bgsubtract0r_info->minor_version = 2;
-  bgsubtract0r_info->num_params =  4;
+  bgsubtract0r_info->num_params =  3;
   bgsubtract0r_info->explanation = "Bluescreen the background of a static video.";
 }
 
@@ -47,7 +46,6 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
   inst->denoise = 1;
   inst->blur = 0;
   inst->threshold = 26;
-  inst->fill = 0x00000000;
   inst->reference = NULL;
   inst->mask = malloc(width*height);
   return (f0r_instance_t)inst;
@@ -66,24 +64,18 @@ void f0r_get_param_info(f0r_param_info_t* info, int param_index)
   switch(param_index)
   {
   case 0:
-    info->name = "color";
-    info->type = F0R_PARAM_COLOR;
-    info->explanation = "Bluescreen color";
-    break;
-
-  case 1:
     info->name = "threshold";
     info->type = F0R_PARAM_DOUBLE;
     info->explanation = "Threshold for difference";
     break;
 
-  case 2:
+  case 1:
     info->name = "denoise";
     info->type = F0R_PARAM_BOOL;
     info->explanation = "Remove noise";
     break;
 
-  case 3:
+  case 2:
     info->name = "blur";
     info->type = F0R_PARAM_DOUBLE;
     info->explanation = "Blur alpha channel by given radius (to remove sharp edges)";
@@ -100,19 +92,14 @@ void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int param_i
   switch(param_index)
   {
   case 0:
-    c = (f0r_param_color_t*)param;
-    inst->fill = ((uint32_t)c->b*255) + (((uint32_t)c->g*255)<<8) + (((uint32_t)c->r*255)<<16);
-    break;
-
-  case 1:
     inst->threshold = *((double*)param) * 255.;
     break;
 
-  case 2:
+  case 1:
     inst->denoise = *((double*)param) >= 0.5;
     break;
 
-  case 3:
+  case 2:
     inst->blur = (int)(*((double*)param)+0.5);
     break;
   }
@@ -127,21 +114,14 @@ void f0r_get_param_value(f0r_instance_t instance, f0r_param_t param, int param_i
   switch(param_index)
   {
   case 0:
-    c = (f0r_param_color_t*)param;
-    c->r = (inst->fill&0xff) / 255.;
-    c->g = (inst->fill>>8&0xff) / 255.;
-    c->b = (inst->fill>>16&0xff) / 255.;
-    break;
-
-  case 1:
     *((double*)param) = (double)inst->threshold / 255.;
     break;
 
-  case 2:
+  case 1:
     *((double*)param) = inst->denoise ? 1. : 0.;
     break;
 
-  case 3:
+  case 2:
     *((double*)param) = inst->blur;
     break;
   }
@@ -227,17 +207,8 @@ void f0r_update(f0r_instance_t instance, double time, const uint32_t* inframe, u
       */
     }
 
-  if (inst->fill && 0xff000000)
-    for (i=0; i<len; i++)
-    {
-      if (mask[i])
-        outframe[i] = inframe[i];
-      else
-        outframe[i] = inst->fill;
-    }
-  else
-    for (i=0; i<len; i++)
-      outframe[i] = inframe[i] & 0xffffff | mask[i] << 24;
+  for (i=0; i<len; i++)
+    outframe[i] = inframe[i] & 0xffffff | mask[i] << 24;
 
   if (blur)
   {
